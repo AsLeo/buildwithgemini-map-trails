@@ -1,0 +1,596 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>Map Trails - Washington State Hiking Trails & Full Paths</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+  <link rel="stylesheet" href="https://unpkg.com/leaflet.markercluster@1.5.3/dist/MarkerCluster.css" />
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; display: flex; height: 100vh; overflow: hidden; background: #0f172a; color: #f8fafc; }
+    
+    #sidebar { width: 400px; background: #1e293b; display: flex; flex-direction: column; border-right: 1px solid #334155; z-index: 1000; box-shadow: 2px 0 12px rgba(0,0,0,0.4); }
+    #header { padding: 16px 20px; background: #0f172a; border-bottom: 1px solid #334155; }
+    #header h1 { font-size: 1.25rem; font-weight: 700; color: #38bdf8; display: flex; align-items: center; justify-content: space-between; }
+    #header p { font-size: 0.8rem; color: #94a3b8; margin-top: 4px; }
+    
+    .search-box { padding: 10px 16px; background: #1e293b; border-bottom: 1px solid #334155; }
+    .search-box input { width: 100%; padding: 8px 12px; border-radius: 6px; border: 1px solid #475569; background: #0f172a; color: white; font-size: 0.85rem; outline: none; }
+    .search-box input:focus { border-color: #38bdf8; }
+
+    .region-nav { padding: 8px 16px; display: flex; flex-wrap: wrap; gap: 6px; background: #1e293b; border-bottom: 1px solid #334155; }
+    .chip { font-size: 0.72rem; padding: 5px 10px; border-radius: 9999px; background: #334155; color: #cbd5e1; border: none; cursor: pointer; transition: all 0.2s; }
+    .chip:hover { background: #0284c7; color: white; }
+    .chip.active { background: #0284c7; color: white; font-weight: 600; }
+    
+    #stats-bar { padding: 12px 20px; background: #0f172a; display: flex; justify-content: space-between; font-size: 0.85rem; border-bottom: 1px solid #334155; }
+    .stat-item { text-align: center; }
+    .stat-val { font-size: 1.15rem; font-weight: 700; color: #10b981; }
+    .stat-lbl { font-size: 0.68rem; color: #94a3b8; text-transform: uppercase; letter-spacing: 0.5px; }
+    
+    .color-legend { padding: 9px 16px; background: #0b1329; border-bottom: 1px solid #1e293b; font-size: 0.76rem; display: flex; justify-content: space-around; align-items: center; }
+    .legend-tag { display: flex; align-items: center; gap: 7px; font-weight: 600; }
+    .legend-bar-black { width: 22px; height: 5px; background: #090d16; border: 1.5px solid #ffffff; border-radius: 3px; box-shadow: 0 0 4px rgba(255,255,255,0.4); }
+    .legend-bar-green { width: 22px; height: 5px; background: #10b981; border: 1px solid #34d399; border-radius: 3px; box-shadow: 0 0 8px #34d399; }
+    
+    .instruction-bar { padding: 9px 16px; background: #172554; border-bottom: 1px solid #1e3a8a; font-size: 0.76rem; color: #93c5fd; display: flex; align-items: center; gap: 6px; line-height: 1.35; }
+    
+    #trail-list { flex: 1; overflow-y: auto; padding: 12px 16px; }
+    .trail-card { background: #334155; border-radius: 8px; padding: 12px 14px; margin-bottom: 10px; cursor: pointer; transition: all 0.15s; border-left: 5px solid #090d16; }
+    .trail-card:hover { transform: translateY(-2px); box-shadow: 0 4px 12px rgba(0,0,0,0.3); border-color: #38bdf8; }
+    .trail-card.completed { border-left-color: #10b981; background: #1a3832; }
+    
+    .trail-title { font-weight: 600; font-size: 0.92rem; display: flex; justify-content: space-between; align-items: center; }
+    .badge-completed { font-size: 0.68rem; padding: 2px 7px; border-radius: 4px; background: #10b981; color: white; font-weight: 600; }
+    .badge-todo { font-size: 0.68rem; padding: 2px 7px; border-radius: 4px; background: #1e293b; border: 1px solid #475569; color: #94a3b8; }
+    .trail-meta { font-size: 0.78rem; color: #cbd5e1; margin-top: 5px; display: flex; gap: 10px; }
+    .trail-desc { font-size: 0.73rem; color: #94a3b8; margin-top: 6px; line-height: 1.35; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
+    
+    #map-container { flex: 1; position: relative; }
+    #map { width: 100%; height: 100%; background: #0f172a; }
+    
+    .layer-control { position: absolute; top: 16px; right: 16px; z-index: 1000; background: rgba(15, 23, 42, 0.92); padding: 12px 16px; border-radius: 8px; border: 1px solid #334155; font-size: 0.8rem; box-shadow: 0 4px 16px rgba(0,0,0,0.4); }
+    .layer-control label { display: flex; align-items: center; gap: 6px; cursor: pointer; margin-bottom: 5px; }
+    
+    /* Green Dot Badge for Completed Clusters */
+    .green-cluster-badge {
+      background: radial-gradient(circle at 30% 30%, #34d399, #059669);
+      color: white;
+      font-weight: 800;
+      font-size: 14px;
+      border-radius: 50%;
+      border: 3px solid #ffffff;
+      box-shadow: 0 0 16px rgba(16, 185, 129, 0.85), 0 3px 6px rgba(0,0,0,0.4);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      transition: transform 0.2s cubic-bezier(0.34, 1.56, 0.64, 1);
+      cursor: pointer;
+    }
+    .green-cluster-badge:hover {
+      transform: scale(1.18);
+    }
+
+    /* Custom Trail Hover Tooltip */
+    .leaflet-tooltip.trail-hover-tooltip {
+      background: rgba(15, 23, 42, 0.96);
+      color: #f8fafc;
+      border: 1px solid #38bdf8;
+      border-radius: 6px;
+      padding: 7px 13px;
+      font-size: 0.85rem;
+      font-family: inherit;
+      box-shadow: 0 4px 18px rgba(0, 0, 0, 0.6);
+      pointer-events: none;
+    }
+    .leaflet-tooltip-top.trail-hover-tooltip:before {
+      border-top-color: #38bdf8;
+    }
+    
+    /* Popups */
+    .leaflet-popup-content-wrapper { background: #1e293b; color: #f8fafc; border-radius: 8px; box-shadow: 0 4px 24px rgba(0,0,0,0.6); }
+    .leaflet-popup-tip { background: #1e293b; }
+    .popup-box { padding: 4px 2px; }
+    .popup-box h3 { color: #38bdf8; font-size: 1.05rem; margin-bottom: 4px; line-height: 1.25; }
+    .popup-box .pop-region { font-size: 0.75rem; color: #94a3b8; margin-bottom: 8px; }
+    .popup-box .pop-stats { font-size: 0.8rem; color: #e2e8f0; display: grid; grid-template-columns: 1fr 1fr; gap: 6px; margin-bottom: 8px; background: #0f172a; padding: 8px; border-radius: 6px; }
+    .popup-box p { font-size: 0.78rem; color: #cbd5e1; margin-bottom: 6px; line-height: 1.35; }
+    .popup-toggle-btn { width: 100%; border: none; padding: 9px; border-radius: 6px; font-weight: 700; cursor: pointer; margin-top: 8px; font-size: 0.82rem; transition: background 0.15s; }
+    .btn-mark-done { background: #10b981; color: white; }
+    .btn-mark-done:hover { background: #059669; }
+    .btn-mark-todo { background: #334155; color: #f8fafc; border: 1px solid #64748b; }
+    .btn-mark-todo:hover { background: #1e293b; }
+    .wta-link { display: inline-block; margin-top: 8px; font-size: 0.75rem; color: #38bdf8; text-decoration: none; }
+    .wta-link:hover { text-decoration: underline; }
+
+    #loading-indicator { position: absolute; bottom: 20px; left: 20px; z-index: 1000; background: rgba(15, 23, 42, 0.85); padding: 7px 14px; border-radius: 6px; border: 1px solid #334155; font-size: 0.75rem; color: #38bdf8; display: none; }
+    #zoom-indicator { position: absolute; bottom: 20px; right: 20px; z-index: 1000; background: rgba(15, 23, 42, 0.85); padding: 6px 12px; border-radius: 6px; border: 1px solid #334155; font-size: 0.75rem; color: #94a3b8; }
+  </style>
+</head>
+<body>
+  <div id="sidebar">
+    <div id="header">
+      <h1>🌲 Map Trails <span id="trail-count-badge" style="font-size: 0.75rem; color: #38bdf8; font-weight: normal;">Full Paths</span></h1>
+      <p>Washington State Hiking Explorer & Interactive Trails</p>
+    </div>
+    
+    <div class="search-box">
+      <input type="text" id="searchInput" placeholder="Search trails (e.g. Dirtyface, Si, Rainier)..." oninput="handleSearch()">
+    </div>
+
+    <div class="region-nav">
+      <button class="chip active" onclick="zoomTo('all', event)">All WA</button>
+      <button class="chip" onclick="zoomTo('dirtyface', event)">Lake Wenatchee / Dirtyface</button>
+      <button class="chip" onclick="zoomTo('rainier', event)">Mt Rainier</button>
+      <button class="chip" onclick="zoomTo('snoqualmie', event)">Snoqualmie Pass</button>
+      <button class="chip" onclick="zoomTo('enchantments', event)">Enchantments</button>
+      <button class="chip" onclick="zoomTo('cascades', event)">North Cascades</button>
+      <button class="chip" onclick="zoomTo('olympics', event)">Olympics</button>
+    </div>
+
+    <div class="color-legend">
+      <div class="legend-tag" style="color: #cbd5e1;"><div class="legend-bar-black"></div> Black: Not Hiked Yet</div>
+      <div class="legend-tag" style="color: #34d399;"><div class="legend-bar-green"></div> Green: Highlighted (Hiked!)</div>
+    </div>
+
+    <div class="instruction-bar">
+      ✨ <span><b>Every trail path is hoverable & clickable!</b> Hover to view the trail name; click any trail line to toggle between Black and Green.</span>
+    </div>
+
+    <div id="stats-bar">
+      <div class="stat-item"><div class="stat-val" id="stat-completed">1</div><div class="stat-lbl">Completed</div></div>
+      <div class="stat-item"><div class="stat-val" id="stat-miles">5.5 mi</div><div class="stat-lbl">Miles Hiked</div></div>
+      <div class="stat-item"><div class="stat-val" id="stat-elevation">1,450 ft</div><div class="stat-lbl">Elevation Gain</div></div>
+    </div>
+
+    <div id="trail-list">
+      <!-- Trail list rendered via JS -->
+    </div>
+  </div>
+
+  <div id="map-container">
+    <div id="map"></div>
+    <div class="layer-control">
+      <strong>Topography & Background</strong>
+      <label><input type="radio" name="basemap" value="topo" checked onchange="switchBaseMap('topo')"> Topographic (OpenTopoMap)</label>
+      <label><input type="radio" name="basemap" value="usgs" onchange="switchBaseMap('usgs')"> USGS National Topo</label>
+      <label><input type="radio" name="basemap" value="osm" onchange="switchBaseMap('osm')"> OpenStreetMap</label>
+    </div>
+    <div id="loading-indicator">⚡ Loading trail paths in view...</div>
+    <div id="zoom-indicator">Zoom Level: <span id="curZoom">7</span></div>
+  </div>
+
+  <!-- Leaflet, MarkerCluster, and Esri-Leaflet -->
+  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+  <script src="https://unpkg.com/leaflet.markercluster@1.5.3/dist/leaflet.markercluster.js"></script>
+  <script src="https://unpkg.com/esri-leaflet@3.0.12/dist/esri-leaflet.js"></script>
+  <script>
+    const ZOOM_THRESHOLD = 10;
+    let allTrails = [];
+    let completedSet = new Set(['skyline-trail-rainier', 'mount-si', 'rattlesnake-ledge']);
+    try {
+      const saved = localStorage.getItem('map_trails_completed');
+      if (saved) completedSet = new Set(JSON.parse(saved));
+    } catch(e) {}
+
+    const regions = {
+      all: { center: [47.4, -120.6], zoom: 7 },
+      dirtyface: { center: [47.848, -120.79], zoom: 13 },
+      rainier: { center: [46.79, -121.735], zoom: 13 },
+      snoqualmie: { center: [47.46, -121.55], zoom: 12 },
+      enchantments: { center: [47.51, -120.8], zoom: 12 },
+      cascades: { center: [48.4, -121.1], zoom: 9 },
+      olympics: { center: [47.8, -123.6], zoom: 9 }
+    };
+
+    // Base Maps
+    const topoLayer = L.tileLayer('https://{s}.tile.opentopomap.org/{z}/{x}/{y}.png', {
+      maxZoom: 17,
+      attribution: 'Map: &copy; OpenTopoMap'
+    });
+
+    const usgsLayer = L.tileLayer('https://basemap.nationalmap.gov/arcgis/rest/services/USGSTopo/MapServer/tile/{z}/{y}/{x}', {
+      maxZoom: 16,
+      attribution: 'USGS National Topo'
+    });
+
+    const osmLayer = L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+      maxZoom: 19,
+      attribution: '&copy; OpenStreetMap'
+    });
+
+    const map = L.map('map', {
+      center: regions.all.center,
+      zoom: regions.all.zoom,
+      layers: [topoLayer]
+    });
+
+    let currentBase = topoLayer;
+    function switchBaseMap(type) {
+      map.removeLayer(currentBase);
+      if (type === 'topo') currentBase = topoLayer;
+      else if (type === 'usgs') currentBase = usgsLayer;
+      else if (type === 'osm') currentBase = osmLayer;
+      map.addLayer(currentBase);
+    }
+
+    // Curated high-resolution polyline paths for key mountain routes
+    const featuredPaths = {
+      "dirty-face-ridge-snowshoe": [
+        [47.83771, -120.79845], [47.83788, -120.79813], [47.83861, -120.79706],
+        [47.83912, -120.79755], [47.83937, -120.79569], [47.83988, -120.79403],
+        [47.84049, -120.7917], [47.84103, -120.7911], [47.84168, -120.79036],
+        [47.8423, -120.78901], [47.84281, -120.78747], [47.84328, -120.78749],
+        [47.84368, -120.78646], [47.84415, -120.78628], [47.84475, -120.78617],
+        [47.84604, -120.78416], [47.84737, -120.7825], [47.84834, -120.78053],
+        [47.84873, -120.78023], [47.84926, -120.77948], [47.85004, -120.78426],
+        [47.85121, -120.78068], [47.85124, -120.78147], [47.8509, -120.78326],
+        [47.85139, -120.78255], [47.85182, -120.78314], [47.85192, -120.78382],
+        [47.85214, -120.78459], [47.85215, -120.78512], [47.85266, -120.78549],
+        [47.85276, -120.78593], [47.85316, -120.78665], [47.85358, -120.78686],
+        [47.85364, -120.78735], [47.85357, -120.78791], [47.85418, -120.78818],
+        [47.8537, -120.78899], [47.85432, -120.78923], [47.85495, -120.78925],
+        [47.85496, -120.78982], [47.85517, -120.79042], [47.85518, -120.79089],
+        [47.85561, -120.79125], [47.85577, -120.79237], [47.85651, -120.79268],
+        [47.85694, -120.79319], [47.85721, -120.79361], [47.85674, -120.79427],
+        [47.85699, -120.79491], [47.8569, -120.79534], [47.85657, -120.79587],
+        [47.85613, -120.79655], [47.85596, -120.79732], [47.85557, -120.79863],
+        [47.85567, -120.79922]
+      ],
+      "skyline-trail-rainier": [
+        [46.7865, -121.7351], [46.7885, -121.7370], [46.7915, -121.7392],
+        [46.7942, -121.7410], [46.7970, -121.7400], [46.8005, -121.7375],
+        [46.8020, -121.7340], [46.8000, -121.7300], [46.7960, -121.7280],
+        [46.7915, -121.7275], [46.7880, -121.7310], [46.7865, -121.7351]
+      ],
+      "mount-si": [
+        [47.4881, -121.7231], [47.4910, -121.7250], [47.4950, -121.7290],
+        [47.5000, -121.7340], [47.5030, -121.7370], [47.5050, -121.7395],
+        [47.5065, -121.7420], [47.5075, -121.7438]
+      ],
+      "snow-lake": [
+        [47.4447, -121.4233], [47.4480, -121.4310], [47.4520, -121.4370],
+        [47.4570, -121.4420], [47.4610, -121.4480], [47.4645, -121.4530],
+        [47.4670, -121.4580], [47.4685, -121.4610]
+      ],
+      "rattlesnake-ledge": [
+        [47.4348, -121.7678], [47.4370, -121.7695], [47.4400, -121.7720],
+        [47.4425, -121.7745], [47.4445, -121.7770], [47.4455, -121.7790]
+      ],
+      "colchuck-lake": [
+        [47.5349, -120.8222], [47.5310, -120.8250], [47.5250, -120.8290],
+        [47.5180, -120.8320], [47.5110, -120.8340], [47.5020, -120.8355],
+        [47.4950, -120.8345], [47.4890, -120.8330]
+      ],
+      "lake-22": [
+        [48.0678, -121.7588], [48.0645, -121.7560], [48.0600, -121.7530],
+        [48.0550, -121.7500], [48.0505, -121.7470], [48.0460, -121.7450],
+        [48.0435, -121.7440]
+      ]
+    };
+
+    // Layer Groups
+    const polylineMap = {};
+    const glowMap = {};
+    const featuredGroup = L.layerGroup().addTo(map);
+
+    // Dynamic statewide polyline layer (all 26,000+ public WA trails)
+    const stateTrailsService = L.esri.featureLayer({
+      url: 'https://services3.arcgis.com/0IbpLwS460cn4psv/arcgis/rest/services/Washington_Trail_Map_Take2_WFL1/FeatureServer/2',
+      minZoom: 10,
+      simplifyFactor: 0.5,
+      precision: 5,
+      fields: ['OBJECTID', 'trail_name', 'KM_Length', 'primary_use'],
+      style: function(feature) {
+        const id = 'rco-' + feature.properties.OBJECTID;
+        const isComp = completedSet.has(id);
+        return {
+          color: isComp ? '#10b981' : '#090d16',
+          weight: isComp ? 6 : 4.5,
+          opacity: 0.95,
+          lineCap: 'round',
+          lineJoin: 'round'
+        };
+      }
+    }).addTo(map);
+
+    // Hover & click handlers for all statewide trails
+    stateTrailsService.on('mouseover', function(e) {
+      const p = e.layer.feature.properties || {};
+      const name = p.trail_name || 'Washington Trail Path';
+      const lenMi = p.KM_Length ? (p.KM_Length * 0.621371).toFixed(1) + ' mi' : '';
+      const id = 'rco-' + p.OBJECTID;
+      const isComp = completedSet.has(id);
+
+      e.layer.setStyle({
+        weight: isComp ? 8 : 7,
+        color: isComp ? '#34d399' : '#38bdf8'
+      });
+
+      e.layer.bindTooltip(
+        `<div style="font-weight:700; font-size:0.92rem; color:${isComp ? '#34d399' : '#ffffff'};">${name}</div>` +
+        `<div style="font-size:0.75rem; color:#cbd5e1; margin-top:2px;">${lenMi ? lenMi + ' · ' : ''}Statewide Trail Network</div>` +
+        `<div style="font-size:0.72rem; color:${isComp ? '#10b981' : '#94a3b8'}; margin-top:2px;">${isComp ? '✅ Hiked (Green)' : '⚫ Not Hiked (Black - Click to toggle)'}</div>`,
+        { sticky: true, direction: 'top', className: 'trail-hover-tooltip' }
+      ).openTooltip();
+    });
+
+    stateTrailsService.on('mouseout', function(e) {
+      const id = 'rco-' + e.layer.feature.properties.OBJECTID;
+      const isComp = completedSet.has(id);
+      e.layer.setStyle({
+        weight: isComp ? 6 : 4.5,
+        color: isComp ? '#10b981' : '#090d16'
+      });
+    });
+
+    stateTrailsService.on('click', function(e) {
+      const p = e.layer.feature.properties || {};
+      const id = 'rco-' + p.OBJECTID;
+      toggleCompleted(id, p.trail_name || 'Washington Trail Path');
+      stateTrailsService.setFeatureStyle(p.OBJECTID, {
+        color: completedSet.has(id) ? '#10b981' : '#090d16',
+        weight: completedSet.has(id) ? 6 : 4.5
+      });
+    });
+
+    stateTrailsService.on('loading', function() {
+      if (map.getZoom() >= 10) document.getElementById('loading-indicator').style.display = 'block';
+    });
+    stateTrailsService.on('load', function() {
+      document.getElementById('loading-indicator').style.display = 'none';
+    });
+
+    // Completed trails cluster group (for zoomed-out green count badge)
+    const completedClusterGroup = L.markerClusterGroup({
+      maxClusterRadius: 80,
+      spiderfyOnMaxZoom: true,
+      showCoverageOnHover: false,
+      zoomToBoundsOnClick: true,
+      iconCreateFunction: function(cluster) {
+        const count = cluster.getChildCount();
+        const size = Math.min(60, 36 + count * 4);
+        return L.divIcon({
+          html: `<div class="green-cluster-badge" style="width:${size}px; height:${size}px;">${count}</div>`,
+          className: '',
+          iconSize: L.point(size, size)
+        });
+      }
+    });
+
+    function buildPopup(trail) {
+      const isComp = completedSet.has(trail.uid);
+      const mileage = trail.mileage ? `${trail.mileage} mi` : 'N/A';
+      const gain = trail.gain ? `${Math.round(trail.gain)} ft` : 'N/A';
+      const rating = trail.rating ? `★ ${trail.rating.toFixed(1)}` : 'No rating';
+      
+      return `
+        <div class="popup-box">
+          <h3>${trail.title}</h3>
+          <div class="pop-region">${trail.region || 'Washington'}</div>
+          <div class="pop-stats">
+            <div><strong>Distance:</strong> ${mileage}</div>
+            <div><strong>Elevation:</strong> ${gain}</div>
+            <div><strong>Rating:</strong> ${rating}</div>
+            <div><strong>Status:</strong> ${isComp ? '✅ Hiked (Green)' : '⚫ Not Hiked (Black)'}</div>
+          </div>
+          <p>${trail.description || 'No description provided.'}</p>
+          <button class="popup-toggle-btn ${isComp ? 'btn-mark-todo' : 'btn-mark-done'}" onclick="toggleCompleted('${trail.uid}')">
+            ${isComp ? 'Turn Black (Mark Unhiked)' : 'Turn Green (Mark Hiked! 🎉)'}
+          </button>
+          ${trail.url ? `<a class="wta-link" href="${trail.url}" target="_blank">View on WTA.org ↗</a>` : ''}
+        </div>
+      `;
+    }
+
+    function toggleCompleted(trailId, customName) {
+      if (completedSet.has(trailId)) {
+        completedSet.delete(trailId);
+      } else {
+        completedSet.add(trailId);
+      }
+      try {
+        localStorage.setItem('map_trails_completed', JSON.stringify(Array.from(completedSet)));
+      } catch(e) {}
+
+      updateAllVisuals();
+    }
+
+    function updateAllVisuals() {
+      const zoom = map.getZoom();
+      document.getElementById('curZoom').innerText = zoom;
+
+      // Update Featured trails polylines
+      allTrails.forEach(t => {
+        if (polylineMap[t.uid]) {
+          const isComp = completedSet.has(t.uid);
+          polylineMap[t.uid].setStyle({
+            color: isComp ? '#10b981' : '#090d16',
+            weight: isComp ? 6.5 : 5.5
+          });
+          if (glowMap[t.uid]) {
+            glowMap[t.uid].setStyle({
+              color: isComp ? '#34d399' : '#ffffff',
+              opacity: isComp ? 0.45 : 0.4
+            });
+          }
+        }
+      });
+
+      // Zoom-dependent Completed Cluster Management
+      if (zoom < ZOOM_THRESHOLD) {
+        completedClusterGroup.clearLayers();
+        allTrails.forEach(t => {
+          if (completedSet.has(t.uid)) {
+            const singleGreenIcon = L.divIcon({
+              html: `<div class="green-cluster-badge" style="width:34px; height:34px;">1</div>`,
+              className: '',
+              iconSize: L.point(34, 34)
+            });
+            const m = L.marker([t.lat, t.lng], { icon: singleGreenIcon });
+            m.bindTooltip(
+              `<div style="font-weight:700; color:#34d399;">${t.title}</div>` +
+              `<div style="font-size:0.75rem; color:#cbd5e1;">✅ Completed! Click to zoom.</div>`,
+              { direction: 'top', className: 'trail-hover-tooltip' }
+            );
+            m.on('click', () => map.flyTo([t.lat, t.lng], 13, { duration: 1.0 }));
+            completedClusterGroup.addLayer(m);
+          }
+        });
+
+        if (!map.hasLayer(completedClusterGroup)) map.addLayer(completedClusterGroup);
+        if (map.hasLayer(featuredGroup)) map.removeLayer(featuredGroup);
+      } else {
+        if (map.hasLayer(completedClusterGroup)) map.removeLayer(completedClusterGroup);
+        if (!map.hasLayer(featuredGroup)) map.addLayer(featuredGroup);
+      }
+
+      updateStats();
+      renderSidebarList();
+    }
+
+    map.on('zoomend', updateAllVisuals);
+
+    function updateStats() {
+      let count = 0;
+      let miles = 0;
+      let gain = 0;
+
+      allTrails.forEach(t => {
+        if (completedSet.has(t.uid)) {
+          count++;
+          miles += (t.mileage || 0);
+          gain += (t.gain || 0);
+        }
+      });
+
+      document.getElementById('stat-completed').innerText = count;
+      document.getElementById('stat-miles').innerText = miles.toFixed(1) + ' mi';
+      document.getElementById('stat-elevation').innerText = Math.round(gain).toLocaleString() + ' ft';
+    }
+
+    function renderSidebarList(filtered) {
+      const listContainer = document.getElementById('trail-list');
+      listContainer.innerHTML = '';
+      const items = filtered || allTrails.slice(0, 50);
+
+      items.forEach(t => {
+        const isComp = completedSet.has(t.uid);
+        const card = document.createElement('div');
+        card.className = `trail-card ${isComp ? 'completed' : ''}`;
+        card.innerHTML = `
+          <div class="trail-title">
+            <span>${t.title}</span>
+            <span class="${isComp ? 'badge-completed' : 'badge-todo'}">${isComp ? 'Hiked' : 'To Do'}</span>
+          </div>
+          <div class="trail-meta">
+            <span>📏 ${t.mileage ? t.mileage + ' mi' : 'N/A'}</span>
+            <span>⛰️ ${t.gain ? Math.round(t.gain) + ' ft' : 'N/A'}</span>
+            <span>${t.rating ? '★ ' + t.rating.toFixed(1) : ''}</span>
+          </div>
+          <div class="trail-desc">${t.region || ''} — ${t.description || ''}</div>
+        `;
+
+        card.onclick = () => {
+          map.flyTo([t.lat, t.lng], 13, { duration: 1.0 });
+          setTimeout(() => {
+            const poly = polylineMap[t.uid];
+            if (poly) poly.openPopup();
+          }, 1100);
+        };
+
+        listContainer.appendChild(card);
+      });
+    }
+
+    function handleSearch() {
+      const q = document.getElementById('searchInput').value.toLowerCase().trim();
+      let results = allTrails;
+      if (q) {
+        results = allTrails.filter(t => 
+          (t.title && t.title.toLowerCase().includes(q)) ||
+          (t.region && t.region.toLowerCase().includes(q)) ||
+          (t.description && t.description.toLowerCase().includes(q))
+        );
+      }
+      renderSidebarList(results.slice(0, 80));
+    }
+
+    function zoomTo(reg, ev) {
+      const target = regions[reg] || regions.all;
+      map.flyTo(target.center, target.zoom, { duration: 1.2 });
+      document.querySelectorAll('.chip').forEach(c => c.classList.remove('active'));
+      if (ev && ev.target) ev.target.classList.add('active');
+    }
+
+    // Load full WTA dataset
+    fetch('/wta_trails.json')
+      .then(res => res.json())
+      .then(geoJson => {
+        allTrails = geoJson.features.map(f => {
+          const p = f.properties || {};
+          const coords = f.geometry && f.geometry.coordinates ? f.geometry.coordinates : null;
+          return {
+            uid: p.uid || p.uuid || Math.random().toString(),
+            title: p.title || 'Trail',
+            mileage: p.mileage || 0,
+            gain: p.gain || 0,
+            rating: p.rating || 0,
+            region: p.region || '',
+            description: p.description || '',
+            url: p.url || '',
+            lat: coords ? coords[1] : null,
+            lng: coords ? coords[0] : null
+          };
+        }).filter(t => t.lat !== null && t.lng !== null);
+
+        // Add polyline routes for featured trails (Dirtyface, Rainier, Si, etc.)
+        allTrails.forEach(t => {
+          if (featuredPaths[t.uid]) {
+            const isComp = completedSet.has(t.uid);
+            const pathCoords = featuredPaths[t.uid];
+
+            // Halo outline
+            const glow = L.polyline(pathCoords, {
+              color: isComp ? '#34d399' : '#ffffff',
+              weight: 10,
+              opacity: isComp ? 0.45 : 0.4,
+              lineCap: 'round',
+              lineJoin: 'round',
+              interactive: false
+            }).addTo(featuredGroup);
+
+            // Clickable polyline
+            const poly = L.polyline(pathCoords, {
+              color: isComp ? '#10b981' : '#090d16',
+              weight: isComp ? 6.5 : 5.5,
+              opacity: 1.0,
+              lineCap: 'round',
+              lineJoin: 'round'
+            }).addTo(featuredGroup);
+
+            poly.bindPopup(buildPopup(t));
+            poly.bindTooltip(
+              `<div style="font-weight:700; font-size:0.92rem; color:${isComp ? '#34d399' : '#ffffff'};">${t.title}</div>` +
+              `<div style="font-size:0.75rem; color:#cbd5e1; margin-top:2px;">${t.mileage} mi · ${t.gain} ft elevation gain</div>` +
+              `<div style="font-size:0.72rem; color:${isComp ? '#10b981' : '#94a3b8'}; margin-top:2px;">${isComp ? '✅ Hiked (Green)' : '⚫ Not Hiked (Black - Click to toggle)'}</div>`,
+              { sticky: true, direction: 'top', className: 'trail-hover-tooltip' }
+            );
+
+            poly.on('mouseover', function () { this.setStyle({ weight: 9 }); });
+            poly.on('mouseout', function () { this.setStyle({ weight: isComp ? 6.5 : 5.5 }); });
+
+            polylineMap[t.uid] = poly;
+            glowMap[t.uid] = glow;
+          }
+        });
+
+        updateAllVisuals();
+      })
+      .catch(err => {
+        console.error('Failed to load WTA trails GeoJSON:', err);
+      });
+  </script>
+</body>
+</html>
